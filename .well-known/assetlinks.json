@@ -1,8 +1,8 @@
 [{
-  "relation": ["delegate_permission/common.handle_all_urls"],
-  "target": {
-    "namespace": "android_app",
-    "package_name": "io.github.enricolosangeles_rgb.twa",
-    "sha256_cert_fingerprints": ["F8:3D:61:8D:E6:15:B2:9B:EC:E1:1E:2E:F5:A2:82:47:67:54:51:49:82:43:C5:95:AC:F2:F4:39:0C:1A:27:8D"]
-  }
-}]
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "io.github.enricolosangeles_rgb.twa",
+        "sha256_cert_fingerprints": ["4E:A2:0B:BF:05:3F:44:B9:2C:04:4D:2F:AB:78:F6:13:75:D3:88:BD:92:E7:BC:8B:5A:AA:30:F4:73:7F:E9:8C"]
+      }
+    }]

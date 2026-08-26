@@ -25,9 +25,17 @@ self.addEventListener('activate', (event) => {
 
 // Network-first para chamadas à API (jsonbin), licenças e libs externas; cache-first para o resto (funciona offline)
 self.addEventListener('fetch', (event) => {
-  const url = event.request.url;
-  if (url.includes('api.jsonbin.io') || url.includes('fonts.googleapis.com') || url.includes('fonts.gstatic.com')
-      || url.includes('licenses.json') || url.includes('cdnjs.cloudflare.com')) {
+  const reqUrl = new URL(event.request.url);
+  const networkFirstHosts = [
+    'api.jsonbin.io',
+    'fonts.googleapis.com',
+    'fonts.gstatic.com',
+    'cdnjs.cloudflare.com'
+  ];
+  const isNetworkFirstHost = networkFirstHosts.includes(reqUrl.hostname);
+  const isLicensesFile = reqUrl.origin === self.location.origin && reqUrl.pathname.endsWith('/licenses.json');
+
+  if (isNetworkFirstHost || isLicensesFile) {
     event.respondWith(
       fetch(event.request).catch(() => caches.match(event.request))
     );

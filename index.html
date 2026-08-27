@@ -69,25 +69,12 @@ header p{margin:3px 0 0;color:var(--text-muted);font-size:13px;}
   border-radius:14px;
   padding:16px 18px;
 }
+.summary-card:nth-child(3){flex-basis:100%;}
 .summary-card .label{font-size:12px;color:var(--text-muted);margin-bottom:6px;}
 .summary-card .value{
   font-family:'Sora',sans-serif;font-weight:700;font-size:23px;color:var(--gold);
 }
 .summary-card.muted .value{color:var(--text);}
-
-.hero-card{
-  background:linear-gradient(160deg, var(--surface) 0%, var(--surface-2) 100%);
-  border:1px solid var(--gold-dim);
-  border-radius:16px;
-  padding:18px 20px;
-  margin-bottom:12px;
-}
-.hero-card .label{font-size:12px;color:var(--text-muted);margin-bottom:4px;}
-.hero-card .value{
-  font-family:'Sora',sans-serif;font-weight:800;font-size:30px;color:var(--gold);
-  letter-spacing:.2px;
-}
-.hero-card .sub{font-size:12px;color:var(--text-muted);margin-top:2px;}
 
 .list-card{
   background:var(--surface);
@@ -305,7 +292,6 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield;}
   <!-- ================= PAINEL ================= -->
   <div id="panelView">
     <div class="section-title">Previsão de Recebimentos</div>
-    <div class="hero-card" id="heroCard"></div>
     <div class="summary-row" id="summaryRow"></div>
 
     <div class="section-title">Projeção mensal</div>
@@ -824,26 +810,42 @@ function render(){
 }
 
 function renderSummary(){
-  const rows = aggregate();
   const curKey = currentMonthKey();
+
+  let recebidoMes = 0;
+  let aReceberMes = 0;
+  let futurasTotais = 0;
+
+  DATA.sales.forEach(sale=>{
+    const spread = saleEffectiveSpread(sale);
+    spread.forEach(entry=>{
+      const rec = sale.recebimentos && sale.recebimentos[entry.n];
+      if(entry.key === curKey){
+        if(rec) recebidoMes += rec.valor;
+        else aReceberMes += entry.value;
+      } else if(entry.key > curKey){
+        futurasTotais += entry.value;
+      }
+    });
+  });
+
   const fixoTotal = DATA.projects
     .filter(p=>p.includeFixo && (!p.mesInicioFixo || curKey>=p.mesInicioFixo))
     .reduce((a,p)=>a+(p.fixoMensal||0),0);
-  const cur = rows.find(r=>r.key===curKey) || {total: fixoTotal};
-  const pendente = DATA.sales.reduce((acc,s)=>{
-    const spread = saleEffectiveSpread(s);
-    const future = spread.filter(x=>x.key>curKey).reduce((a,b)=>a+b.value,0);
-    return acc+future;
-  },0);
+  aReceberMes += fixoTotal;
 
   document.getElementById('summaryRow').innerHTML = `
     <div class="summary-card">
-      <div class="label">Total este mês</div>
-      <div class="value">${fmt(cur.total)}</div>
+      <div class="label">Recebido este mês</div>
+      <div class="value">${fmt(recebidoMes)}</div>
     </div>
     <div class="summary-card muted">
-      <div class="label">Comissões futuras</div>
-      <div class="value">${fmt(pendente)}</div>
+      <div class="label">A receber este mês</div>
+      <div class="value">${fmt(aReceberMes)}</div>
+    </div>
+    <div class="summary-card muted">
+      <div class="label">Comissões futuras totais</div>
+      <div class="value">${fmt(futurasTotais)}</div>
     </div>
   `;
 }

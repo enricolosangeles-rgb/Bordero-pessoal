@@ -13,6 +13,8 @@
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.0.4/tesseract.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
 
@@ -75,6 +77,31 @@ header p{margin:3px 0 0;color:var(--text-muted);font-size:13px;}
   font-family:'Sora',sans-serif;font-weight:700;font-size:23px;color:var(--gold);
 }
 .summary-card.muted .value{color:var(--text);}
+
+.ocr-box{
+  background:var(--surface-2);
+  border:1px dashed var(--gold-dim);
+  border-radius:12px;
+  padding:12px 14px;
+  margin-bottom:16px;
+  text-align:center;
+}
+#ocrStatus{font-size:12px;color:var(--text-muted);margin-top:8px;min-height:14px;}
+#ocrStatus.ok{color:var(--green);}
+#ocrStatus.err{color:var(--red);}
+
+.bordero-row{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:10px 0;border-bottom:1px solid var(--line);
+}
+.bordero-row:last-child{border-bottom:none;}
+.bordero-row .br-left{display:flex;flex-direction:column;gap:2px;font-size:13px;}
+.bordero-row .br-contrato{font-weight:700;}
+.bordero-row .br-sub{font-size:11.5px;color:var(--text-muted);}
+.bordero-row .br-status{font-size:11px;padding:3px 8px;border-radius:20px;white-space:nowrap;}
+.bordero-row .br-status.ok{background:rgba(95,190,139,0.15);color:var(--green);}
+.bordero-row .br-status.div{background:var(--red-soft);color:var(--red);}
+.bordero-row .br-status.no{background:var(--surface-2);color:var(--text-muted);}
 
 .list-card{
   background:var(--surface);
@@ -374,6 +401,13 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield;}
 <div class="overlay" id="saleOverlay">
   <div class="sheet">
     <h2 id="saleFormTitle">Nova venda</h2>
+
+    <div class="ocr-box">
+      <button type="button" class="btn ghost small" id="ocrBtn">📷 Ler documento (foto)</button>
+      <input type="file" id="ocrFile" accept="image/*" capture="environment" style="display:none;">
+      <div id="ocrStatus"></div>
+    </div>
+
     <div class="field">
       <label>Projeto</label>
       <select id="f_project"></select>
@@ -456,13 +490,31 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield;}
     </div>
     <div class="two-col">
       <div class="field">
-        <label>Dia do recebimento</label>
+        <label>Dia do recebimento (fixo)</label>
         <input type="number" id="p_diaFixo" min="1" max="31" placeholder="Ex: 5">
       </div>
       <div class="field">
         <label>Início a partir de</label>
         <input type="month" id="p_mesInicioFixo">
       </div>
+    </div>
+    <div class="section-title" style="margin-top:16px;">Período de apuração da comissão</div>
+    <p style="color:var(--text-muted);font-size:12px;margin:-4px 0 10px;">
+      Define a janela de vendas de cada ciclo. A primeira parcela da comissão cai automaticamente no mês seguinte ao fechamento, no dia escolhido.
+    </p>
+    <div class="two-col">
+      <div class="field">
+        <label>Abertura do período (dia)</label>
+        <input type="number" id="p_diaAbertura" min="1" max="31" placeholder="Ex: 26">
+      </div>
+      <div class="field">
+        <label>Fechamento do período (dia)</label>
+        <input type="number" id="p_diaFechamento" min="1" max="31" placeholder="Ex: 25">
+      </div>
+    </div>
+    <div class="field">
+      <label>Dia de recebimento da comissão</label>
+      <input type="number" id="p_diaComissao" min="1" max="31" placeholder="Ex: 15">
     </div>
     <div class="project-toggle-row" style="background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;">
       <div class="txt"><b>Incluir valor fixo</b><br>desligue se sair dessa empresa — para de contar no total</div>
@@ -488,6 +540,28 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield;}
       style="width:100%;padding:12px 14px;border-radius:10px;border:1px solid var(--line);background:var(--surface-2);color:var(--text);font-size:15px;text-align:center;letter-spacing:1px;margin-bottom:12px;">
     <button class="btn" id="licenseSubmit" style="width:100%;">Ativar</button>
     <div id="licenseMsg" style="font-size:12.5px;color:var(--red);margin-top:12px;min-height:16px;"></div>
+  </div>
+</div>
+
+<div class="overlay" id="borderoOverlay">
+  <div class="sheet">
+    <h2>Ler Borderô</h2>
+    <p style="color:var(--text-muted);font-size:12.5px;margin:-4px 0 14px;">
+      Envie o PDF ou foto do borderô que a empresa mandou. O app tenta identificar o número do contrato e o valor pago em cada linha, e compara com o previsto.
+    </p>
+
+    <div class="ocr-box">
+      <button type="button" class="btn ghost small" id="borderoBtn">📄 Selecionar PDF ou foto</button>
+      <input type="file" id="borderoFile" accept="image/*,application/pdf" style="display:none;">
+      <div id="borderoStatus"></div>
+    </div>
+
+    <div id="borderoResults"></div>
+
+    <div class="btn-row" style="margin-top:16px;">
+      <button class="btn" id="borderoApplyAll" style="display:none;">Aplicar todos identificados</button>
+      <button class="btn ghost" id="closeBordero">Fechar</button>
+    </div>
   </div>
 </div>
 
@@ -652,6 +726,9 @@ function migrate(){
     if(p.includeFixo===undefined) p.includeFixo = oldInclude!==undefined ? oldInclude : true;
     if(p.diaFixo===undefined) p.diaFixo = null;
     if(p.mesInicioFixo===undefined) p.mesInicioFixo = null;
+    if(p.diaAberturaPeriodo===undefined) p.diaAberturaPeriodo = null;
+    if(p.diaFechamentoPeriodo===undefined) p.diaFechamentoPeriodo = null;
+    if(p.diaComissao===undefined) p.diaComissao = null;
   });
   (DATA.sales||[]).forEach(s=>{
     if(s.status===undefined) s.status = 'ativo';
@@ -688,15 +765,71 @@ async function saveData(){
 function saleCommission(sale){ return sale.valor * sale.comissaoPercent; }
 function saleParcelValue(sale){ return saleCommission(sale) / sale.parcelas; }
 
+function addMonthsToKey(key, n){
+  let [y,m] = key.split('-').map(Number); // m já é 1-indexed no monthKey
+  m = m - 1 + n;
+  y += Math.floor(m/12);
+  m = ((m%12)+12)%12;
+  return monthKey(y, m);
+}
+
+function getProject(projectId){
+  return DATA.projects.find(p=>p.id===projectId);
+}
+
+// Descobre em qual "período de apuração" (mês de referência) uma data caiu,
+// considerando abertura/fechamento configurados no projeto.
+function periodoReferenceMonth(project, dateStr){
+  const d = new Date(dateStr+'T00:00:00');
+  const day = d.getDate();
+  let y = d.getFullYear(), m = d.getMonth(); // 0-indexed
+
+  const A = project && project.diaAberturaPeriodo;
+  const F = project && project.diaFechamentoPeriodo;
+
+  // Sem configuração: período = o próprio mês civil da venda (comportamento antigo)
+  if(!A && !F) return monthKey(y, m);
+  const abertura = A || 1;
+  const fechamento = F || 31;
+
+  if(abertura <= fechamento){
+    // período dentro do mesmo mês civil: [abertura, fechamento]
+    if(day < abertura){
+      m -= 1; if(m<0){m=11;y--;}
+    } else if(day > fechamento){
+      m += 1; if(m>11){m=0;y++;}
+    }
+    return monthKey(y, m);
+  } else {
+    // período atravessa a virada do mês (ex: abre dia 26, fecha dia 25 do mês seguinte)
+    if(day >= abertura){
+      // primeira metade do período: já pertence ao ciclo do mês seguinte
+      m += 1; if(m>11){m=0;y++;}
+    }
+    // se day <= fechamento, já está no mês certo (segunda metade do período)
+    return monthKey(y, m);
+  }
+}
+
 // Todas as parcelas previstas, independente da situação (usado no relatório)
 function saleExpectedSpread(sale){
-  const d = new Date(sale.date+'T00:00:00');
-  const day = d.getDate();
-  let y = d.getFullYear(), m = d.getMonth();
+  const project = getProject(sale.projectId);
   const val = saleParcelValue(sale);
   const out = [];
+
+  // Mês de referência (período) em que a venda foi lançada
+  const refKey = periodoReferenceMonth(project, sale.date);
+  // Primeira parcela cai no mês seguinte ao fechamento do período
+  const firstKey = (project && (project.diaAberturaPeriodo || project.diaFechamentoPeriodo))
+    ? addMonthsToKey(refKey, 1)
+    : refKey; // sem período configurado: mantém comportamento antigo (mês da própria venda)
+
+  const [firstY, firstM] = firstKey.split('-').map(Number);
+  const dueDay = (project && project.diaComissao) || new Date(sale.date+'T00:00:00').getDate();
+
+  let y = firstY, m = firstM - 1; // volta pra 0-indexed
   for(let i=0;i<sale.parcelas;i++){
-    const dueDate = new Date(y, m, Math.min(day,28));
+    const dueDate = new Date(y, m, Math.min(dueDay,28));
     out.push({ key: monthKey(y,m), value: val, dueDate: dueDate.toISOString().slice(0,10), n:i+1 });
     m++; if(m>11){m=0;y++;}
   }
@@ -741,11 +874,12 @@ function buildMonthRange(){
   let maxY=today.getFullYear(), maxM=today.getMonth()+5;
 
   DATA.sales.forEach(sale=>{
-    const d = new Date(sale.date+'T00:00:00');
-    const y0=d.getFullYear(), m0=d.getMonth();
+    const spread = saleExpectedSpread(sale);
+    if(spread.length===0) return;
+    const first = spread[0].key.split('-').map(Number);
+    const last = spread[spread.length-1].key.split('-').map(Number);
+    const y0=first[0], m0=first[1]-1, y1=last[0], m1=last[1]-1;
     if(y0<minY || (y0===minY && m0<minM)){minY=y0;minM=m0;}
-    let y1=y0, m1=m0+(sale.parcelas-1);
-    while(m1>11){m1-=12;y1++;}
     if(y1>maxY || (y1===maxY && m1>maxM)){maxY=y1;maxM=m1;}
   });
 
@@ -1112,6 +1246,8 @@ function openSaleForm(sale){
   document.getElementById('saleFormTitle').textContent = sale ? 'Editar venda' : 'Nova venda';
   document.getElementById('deleteSale').style.display = sale ? 'inline-block' : 'none';
   document.getElementById('newProjectField').style.display='none';
+  document.getElementById('ocrStatus').className = '';
+  document.getElementById('ocrStatus').textContent = '';
 
   document.getElementById('f_project').value = sale ? sale.projectId : (DATA.projects[0]?.id || '__new__');
   document.getElementById('f_newProjectName').value='';
@@ -1136,16 +1272,319 @@ window.editSale = function(id){
   if(s) openSaleForm(s);
 };
 
+// ---------- OCR: leitura de documento por foto ----------
+document.getElementById('ocrBtn').onclick = ()=> document.getElementById('ocrFile').click();
+
+document.getElementById('ocrFile').onchange = async (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const statusEl = document.getElementById('ocrStatus');
+  statusEl.className = '';
+  statusEl.textContent = 'Lendo o documento...';
+
+  try{
+    const { data: { text } } = await Tesseract.recognize(file, 'por', {
+      logger: m => {
+        if(m.status === 'recognizing text'){
+          statusEl.textContent = `Lendo o documento... ${Math.round(m.progress*100)}%`;
+        }
+      }
+    });
+    const found = applyOcrGuesses(text);
+    statusEl.className = 'ok';
+    statusEl.textContent = found.length
+      ? `Preenchido automaticamente: ${found.join(', ')}. Confira antes de salvar.`
+      : 'Não consegui identificar os campos automaticamente. Preencha manualmente.';
+  }catch(err){
+    statusEl.className = 'err';
+    statusEl.textContent = 'Não foi possível ler a imagem. Preencha manualmente.';
+  }
+  e.target.value = '';
+};
+
+function applyOcrGuesses(text){
+  const found = [];
+  const clean = text.replace(/\r/g,'');
+
+  // Valor: tenta achar por rótulo (cobre vários modelos de contrato);
+  // se não achar nenhum, usa o MAIOR valor em R$ do documento como último recurso
+  // (geralmente é o valor total do contrato, maior que entrada, parcela e saldo isolados).
+  let valorNum = null;
+  const valorTotalMatch = clean.match(
+    /(?:Valor\s+Total(?:\s+do\s+Produto)?|Valor\s+do\s+Contrato|Pre[çc]o\s+Total|Valor\s+do\s+Pacote|Investimento\s+Total)\s*[:\s]*R?\$?\s*(\d{1,3}(?:\.\d{3})*,\d{2})/i
+  );
+  if(valorTotalMatch){
+    valorNum = parseFloat(valorTotalMatch[1].replace(/\./g,'').replace(',', '.'));
+  } else {
+    const allValues = [...clean.matchAll(/R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})/g)]
+      .map(m => parseFloat(m[1].replace(/\./g,'').replace(',', '.')))
+      .filter(n => !isNaN(n));
+    if(allValues.length) valorNum = Math.max(...allValues);
+  }
+  if(valorNum && valorNum > 0){
+    document.getElementById('f_valor').value = valorNum;
+    found.push('valor');
+  }
+
+  // Número de contrato: cobre "Contrato n.º", "Nº do contrato", "Ref.", "Referência" etc,
+  // capturando códigos alfanuméricos com traço/barra tipo VC-100-0003.
+  const contratoMatch =
+    clean.match(/Contrato\s*n[.\s]*[ºo°]?\s*[:\s]*([A-Za-z0-9]+(?:[\-\/][A-Za-z0-9]+)*)/i) ||
+    clean.match(/N[ºo°]?\s*(?:do\s*)?contrato\s*[:\s]*([A-Za-z0-9]+(?:[\-\/][A-Za-z0-9]+)*)/i) ||
+    clean.match(/(?:Refer[êe]ncia|Ref\.?)\s*[:\s]*([A-Za-z0-9]+(?:[\-\/][A-Za-z0-9]+)*)/i) ||
+    clean.match(/contrato[:\s]+([A-Za-z0-9]+(?:[\-\/][A-Za-z0-9]+)*)/i) ||
+    clean.match(/n[ºo°]\s*[:\s]*([A-Za-z0-9]+(?:[\-\/][A-Za-z0-9]+)*)/i);
+  if(contratoMatch){
+    document.getElementById('f_contratoNumero').value = contratoMatch[1].trim();
+    found.push('contrato');
+  }
+
+  // Nome do cliente: cobre os rótulos mais comuns usados em contratos de clubes/pontos/imóveis
+  // (Cliente, Nome, Cessionário/a, Comprador/a, Adquirente, Titular, Contratante).
+  // Usa [ \t]+ entre palavras (não \s+) pra não "vazar" pra próxima linha do documento.
+  const clienteMatch = clean.match(
+    /(?:cliente|nome(?:\s+completo)?|cession[aá]ri[oa](?:\s*[iI1]\b)?|comprador[a]?|adquirente|titular|contratante)[:\s]+([A-ZÀ-Úa-zà-ú]+(?:[ \t]+[A-ZÀ-Úa-zà-ú]+){1,5})/i
+  );
+  if(clienteMatch){
+    document.getElementById('f_cliente').value = clienteMatch[1].trim();
+    found.push('cliente');
+  }
+
+  return found;
+}
+
+// ---------- Leitura do Borderô (PDF ou imagem) ----------
+if(window.pdfjsLib){
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
+function openBorderoReader(){
+  document.getElementById('borderoStatus').className = '';
+  document.getElementById('borderoStatus').textContent = '';
+  document.getElementById('borderoResults').innerHTML = '';
+  document.getElementById('borderoApplyAll').style.display = 'none';
+  document.getElementById('borderoOverlay').classList.add('open');
+}
+document.getElementById('closeBordero').onclick = ()=>{
+  document.getElementById('borderoOverlay').classList.remove('open');
+};
+document.getElementById('borderoBtn').onclick = ()=> document.getElementById('borderoFile').click();
+
+// Renderiza cada página de um PDF como imagem (canvas) e devolve os data URLs
+async function pdfToImages(file){
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  const images = [];
+  for(let i=1; i<=pdf.numPages; i++){
+    const page = await pdf.getPage(i);
+    const viewport = page.getViewport({ scale: 2 });
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+    images.push(canvas.toDataURL('image/png'));
+  }
+  return images;
+}
+
+document.getElementById('borderoFile').onchange = async (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const statusEl = document.getElementById('borderoStatus');
+  const resultsEl = document.getElementById('borderoResults');
+  resultsEl.innerHTML = '';
+  document.getElementById('borderoApplyAll').style.display = 'none';
+  statusEl.className = '';
+  statusEl.textContent = 'Processando arquivo...';
+
+  try{
+    let fullText = '';
+    if(file.type === 'application/pdf'){
+      statusEl.textContent = 'Convertendo páginas do PDF...';
+      const images = await pdfToImages(file);
+      for(let i=0; i<images.length; i++){
+        statusEl.textContent = `Lendo página ${i+1} de ${images.length}...`;
+        const { data: { text } } = await Tesseract.recognize(images[i], 'por', {
+          logger: m => { if(m.status==='recognizing text') statusEl.textContent = `Lendo página ${i+1} de ${images.length}... ${Math.round(m.progress*100)}%`; }
+        });
+        fullText += '\n' + text;
+      }
+    } else {
+      const { data: { text } } = await Tesseract.recognize(file, 'por', {
+        logger: m => { if(m.status==='recognizing text') statusEl.textContent = `Lendo... ${Math.round(m.progress*100)}%`; }
+      });
+      fullText = text;
+    }
+
+    const candidates = parseBorderoAny(fullText);
+    const matches = matchBorderoCandidates(candidates);
+    renderBorderoResults(matches);
+
+    if(matches.length === 0){
+      statusEl.className = 'err';
+      statusEl.textContent = 'Não consegui identificar linhas com contrato + valor nesse documento.';
+    } else {
+      statusEl.className = 'ok';
+      statusEl.textContent = `${matches.length} linha(s) identificada(s). Confira abaixo antes de aplicar.`;
+    }
+  } catch(err){
+    statusEl.className = 'err';
+    statusEl.textContent = 'Não foi possível ler o arquivo.';
+  }
+  e.target.value = '';
+};
+
+// Tenta primeiro o formato de tabela rica (Contrato | Data | Status | Situação | Valor negociado | % | Comissão total | Valor comissão),
+// que é o layout de borderôs mais completos (ex: imobiliárias/clubes com % de comissão por linha).
+// Se não achar nada nesse formato, cai pro formato simples (uma linha = um contrato + um valor).
+function parseBorderoAny(text){
+  const rich = parseBorderoTable(text);
+  if(rich.length > 0) return rich;
+  return parseBorderoText(text);
+}
+
+// Formato de tabela rica: cada linha pode ter o mesmo contrato repetido (taxas de comissão diferentes).
+// Soma por contrato: usa "Valor comissão" quando presente, senão soma "Comissão total".
+function parseBorderoTable(text){
+  const lines = text.split('\n').map(l=>l.trim()).filter(Boolean);
+  // Contrato  DD/MM/AAAA  status/situação (livre)  R$ valorNegociado  0,80  R$ comissaoTotal  [-]R$ valorComissao
+  const lineRegex = /^(\S+)\s+(\d{2}\/\d{2}\/\d{4})\s+.*?R\$\s*([\d.,]+)\s+(\d+,\d+)\s+R\$\s*([\d.,]+)(?:\s+(-)?R\$\s*([\d.,]+))?\s*$/;
+  const toNum = (s) => parseFloat(s.replace(/\./g,'').replace(',', '.'));
+
+  const grouped = {};
+  const seen = new Set();
+
+  lines.forEach(line=>{
+    const m = line.match(lineRegex);
+    if(!m) return;
+    const [, contrato, data, , , comissaoTotalStr, negSign, valorComissaoStr] = m;
+    const key = `${contrato}|${data}|${comissaoTotalStr}|${valorComissaoStr||''}`;
+    if(seen.has(key)) return; // evita duplicar linha repetida (ex: rodapé/topo de página)
+    seen.add(key);
+
+    if(!grouped[contrato]) grouped[contrato] = { contrato, somaComissaoTotal:0, somaValorComissao:0, temValorComissao:false };
+    const g = grouped[contrato];
+    g.somaComissaoTotal += toNum(comissaoTotalStr);
+    if(valorComissaoStr !== undefined){
+      const v = toNum(valorComissaoStr) * (negSign ? -1 : 1);
+      g.somaValorComissao += v;
+      g.temValorComissao = true;
+    }
+  });
+
+  return Object.values(grouped).map(g => ({
+    contrato: g.contrato,
+    valor: g.temValorComissao ? g.somaValorComissao : g.somaComissaoTotal,
+    rawLine: `${g.contrato} (soma da(s) linha(s) do borderô)`
+  }));
+}
+
+// Procura, em cada linha do texto, um valor em R$ e um código de contrato próximo
+function parseBorderoText(text){
+  const lines = text.split('\n').map(l=>l.trim()).filter(Boolean);
+  const valorRegex = /R?\$?\s*(\d{1,3}(?:\.\d{3})*,\d{2})/;
+  const contratoRegex = /\b([A-Za-z]{0,4}-?\d{2,}(?:[\-\/][A-Za-z0-9]+){0,3})\b/;
+  const candidates = [];
+
+  lines.forEach(line=>{
+    const valorMatch = line.match(valorRegex);
+    if(!valorMatch) return;
+    const restante = line.replace(valorMatch[0], ' ');
+    const contratoMatch = restante.match(contratoRegex);
+    if(!contratoMatch) return;
+    const valor = parseFloat(valorMatch[1].replace(/\./g,'').replace(',', '.'));
+    if(isNaN(valor) || valor <= 0) return;
+    candidates.push({ contrato: contratoMatch[1].trim(), valor, rawLine: line });
+  });
+
+  return candidates;
+}
+
+// Casa cada linha identificada com a venda/parcela pendente correspondente
+function matchBorderoCandidates(candidates){
+  return candidates.map(c=>{
+    const sale = DATA.sales.find(s => (s.contratoNumero||'').toUpperCase() === c.contrato.toUpperCase());
+    if(!sale) return { ...c, status:'no-sale' };
+
+    const spread = saleEffectiveSpread(sale);
+    const pendingEntry = spread.find(e => !(sale.recebimentos && sale.recebimentos[e.n]));
+    if(!pendingEntry) return { ...c, status:'no-parcela', sale };
+
+    const divergente = Math.abs(c.valor - pendingEntry.value) > 0.005;
+    return { ...c, status: divergente ? 'divergente' : 'ok', sale, entry: pendingEntry };
+  });
+}
+
+function renderBorderoResults(matches){
+  const el = document.getElementById('borderoResults');
+  if(matches.length === 0){ el.innerHTML = ''; return; }
+
+  el.innerHTML = matches.map((m, idx)=>{
+    let statusLabel, statusClass, sub;
+    if(m.status === 'no-sale'){
+      statusLabel = 'Contrato não encontrado'; statusClass = 'no';
+      sub = `Lido: ${m.contrato} · ${fmt(m.valor)}`;
+    } else if(m.status === 'no-parcela'){
+      statusLabel = 'Sem parcela pendente'; statusClass = 'no';
+      sub = `${m.sale.cliente || m.sale.contratoNumero} · ${fmt(m.valor)}`;
+    } else if(m.status === 'divergente'){
+      statusLabel = 'Divergente'; statusClass = 'div';
+      sub = `Previsto: ${fmt(m.entry.value)} · Lido: ${fmt(m.valor)}`;
+    } else {
+      statusLabel = 'Confere'; statusClass = 'ok';
+      sub = `${m.sale.cliente || ''} · ${fmt(m.valor)}`;
+    }
+    const canApply = m.status === 'ok' || m.status === 'divergente';
+    return `<div class="bordero-row">
+      <div class="br-left">
+        <span class="br-contrato">${m.contrato}</span>
+        <span class="br-sub">${sub}</span>
+      </div>
+      <span class="br-status ${statusClass}">${statusLabel}</span>
+      ${canApply ? `<button class="icon-btn" title="Aplicar" onclick="applyBorderoMatch(${idx})">✓</button>` : ''}
+    </div>`;
+  }).join('');
+
+  window._borderoMatches = matches;
+  document.getElementById('borderoApplyAll').style.display =
+    matches.some(m=>m.status==='ok'||m.status==='divergente') ? 'inline-block' : 'none';
+}
+
+window.applyBorderoMatch = async function(idx){
+  const m = window._borderoMatches[idx];
+  if(!m || !m.sale || !m.entry) return;
+  if(!m.sale.recebimentos) m.sale.recebimentos = {};
+  m.sale.recebimentos[m.entry.n] = { valor: m.valor, divergente: m.status==='divergente' };
+  await saveData();
+  render();
+  document.getElementById('borderoStatus').className = 'ok';
+  document.getElementById('borderoStatus').textContent = `Parcela do contrato ${m.contrato} atualizada.`;
+};
+
+document.getElementById('borderoApplyAll').onclick = async ()=>{
+  const matches = window._borderoMatches || [];
+  let count = 0;
+  for(const m of matches){
+    if((m.status === 'ok' || m.status === 'divergente') && m.sale && m.entry){
+      if(!m.sale.recebimentos) m.sale.recebimentos = {};
+      m.sale.recebimentos[m.entry.n] = { valor: m.valor, divergente: m.status==='divergente' };
+      count++;
+    }
+  }
+  await saveData();
+  render();
+  const statusEl = document.getElementById('borderoStatus');
+  statusEl.className = 'ok';
+  statusEl.textContent = `${count} parcela(s) atualizada(s) com sucesso.`;
+  document.getElementById('borderoApplyAll').style.display = 'none';
+};
+
 document.getElementById('qaNovaVenda').onclick = ()=>openSaleForm(null);
 document.getElementById('fabAdd').onclick = ()=>openSaleForm(null);
 document.getElementById('qaPrevisao').onclick = ()=>{
   document.getElementById('chart').scrollIntoView({behavior:'smooth', block:'center'});
 };
-document.getElementById('qaConferir').onclick = ()=>{
-  document.getElementById('tabRelatorio').click();
-  document.getElementById('r_situacao').value = 'Pendente';
-  renderReport();
-};
+document.getElementById('qaConferir').onclick = ()=> openBorderoReader();
 document.getElementById('qaRelatorios').onclick = ()=>{
   document.getElementById('tabRelatorio').click();
 };
@@ -1216,6 +1655,9 @@ window.editProject = function(id){
   document.getElementById('p_fixo').value = p.fixoMensal||0;
   document.getElementById('p_diaFixo').value = p.diaFixo||'';
   document.getElementById('p_mesInicioFixo').value = p.mesInicioFixo||'';
+  document.getElementById('p_diaAbertura').value = p.diaAberturaPeriodo||'';
+  document.getElementById('p_diaFechamento').value = p.diaFechamentoPeriodo||'';
+  document.getElementById('p_diaComissao').value = p.diaComissao||'';
   document.getElementById('p_include').checked = !!p.includeFixo;
   document.getElementById('projectOverlay').classList.add('open');
 };
@@ -1231,6 +1673,9 @@ document.getElementById('saveProject').onclick = async ()=>{
   p.fixoMensal = parseFloat(document.getElementById('p_fixo').value)||0;
   p.diaFixo = parseInt(document.getElementById('p_diaFixo').value)||null;
   p.mesInicioFixo = document.getElementById('p_mesInicioFixo').value || null;
+  p.diaAberturaPeriodo = parseInt(document.getElementById('p_diaAbertura').value)||null;
+  p.diaFechamentoPeriodo = parseInt(document.getElementById('p_diaFechamento').value)||null;
+  p.diaComissao = parseInt(document.getElementById('p_diaComissao').value)||null;
   p.includeFixo = document.getElementById('p_include').checked;
   await saveData();
   document.getElementById('projectOverlay').classList.remove('open');
@@ -1358,13 +1803,27 @@ function renderProjectListEdit(){
       </div>
       <div class="two-col">
         <div class="field">
-          <label>Dia do recebimento</label>
+          <label>Dia do recebimento (fixo)</label>
           <input type="number" value="${p.diaFixo||''}" data-pid="${p.id}" class="proj-dia-input" min="1" max="31" placeholder="Ex: 5">
         </div>
         <div class="field">
           <label>Início a partir de</label>
           <input type="month" value="${p.mesInicioFixo||''}" data-pid="${p.id}" class="proj-mesinicio-input">
         </div>
+      </div>
+      <div class="two-col">
+        <div class="field">
+          <label>Abertura do período (dia)</label>
+          <input type="number" value="${p.diaAberturaPeriodo||''}" data-pid="${p.id}" class="proj-abertura-input" min="1" max="31" placeholder="Ex: 26">
+        </div>
+        <div class="field">
+          <label>Fechamento do período (dia)</label>
+          <input type="number" value="${p.diaFechamentoPeriodo||''}" data-pid="${p.id}" class="proj-fechamento-input" min="1" max="31" placeholder="Ex: 25">
+        </div>
+      </div>
+      <div class="field">
+        <label>Dia de recebimento da comissão</label>
+        <input type="number" value="${p.diaComissao||''}" data-pid="${p.id}" class="proj-diacomissao-input" min="1" max="31" placeholder="Ex: 15">
       </div>
       <div class="project-toggle-row">
         <div class="txt"><b>Incluir valor fixo</b><br>desligue se sair dessa empresa</div>
@@ -1410,6 +1869,18 @@ document.getElementById('saveSettings').onclick = async ()=>{
   document.querySelectorAll('.proj-mesinicio-input').forEach(inp=>{
     const p = DATA.projects.find(x=>x.id===inp.dataset.pid);
     if(p) p.mesInicioFixo = inp.value || null;
+  });
+  document.querySelectorAll('.proj-abertura-input').forEach(inp=>{
+    const p = DATA.projects.find(x=>x.id===inp.dataset.pid);
+    if(p) p.diaAberturaPeriodo = parseInt(inp.value)||null;
+  });
+  document.querySelectorAll('.proj-fechamento-input').forEach(inp=>{
+    const p = DATA.projects.find(x=>x.id===inp.dataset.pid);
+    if(p) p.diaFechamentoPeriodo = parseInt(inp.value)||null;
+  });
+  document.querySelectorAll('.proj-diacomissao-input').forEach(inp=>{
+    const p = DATA.projects.find(x=>x.id===inp.dataset.pid);
+    if(p) p.diaComissao = parseInt(inp.value)||null;
   });
   document.querySelectorAll('.proj-include-input').forEach(inp=>{
     const p = DATA.projects.find(x=>x.id===inp.dataset.pid);

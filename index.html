@@ -1982,6 +1982,14 @@ if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
     navigator.serviceWorker.register('sw.js').catch(e=>console.error('SW falhou:', e));
   });
+  // Quando uma versão nova do app assume o controle, recarrega a página automaticamente
+  // pra garantir que o usuário sempre vê a versão mais recente.
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', ()=>{
+    if(refreshing) return;
+    refreshing = true;
+    window.location.reload();
+  });
 }
 </script>
 </body>

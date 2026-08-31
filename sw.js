@@ -1,4 +1,4 @@
-const CACHE_NAME = 'bordero-cache-v1';
+const CACHE_NAME = 'bordero-cache-v2';
 const ASSETS = [
   './index.html',
   './manifest.json',
@@ -23,24 +23,34 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Network-first para chamadas à API (jsonbin), licenças e libs externas; cache-first para o resto (funciona offline)
+// index.html e manifest.json: sempre busca a versão mais nova quando online (network-first),
+// evitando ficar preso numa versão antiga do cache. Offline, cai no cache normalmente.
+// Libs externas e licença: sempre network (não cacheia). Resto (ícones etc): cache-first.
 self.addEventListener('fetch', (event) => {
-  const reqUrl = new URL(event.request.url);
-  const networkFirstHosts = [
-    'api.jsonbin.io',
-    'fonts.googleapis.com',
-    'fonts.gstatic.com',
-    'cdnjs.cloudflare.com'
-  ];
-  const isNetworkFirstHost = networkFirstHosts.includes(reqUrl.hostname);
-  const isLicensesFile = reqUrl.origin === self.location.origin && reqUrl.pathname.endsWith('/licenses.json');
+  const url = event.request.url;
 
-  if (isNetworkFirstHost || isLicensesFile) {
+  if (url.includes('api.jsonbin.io') || url.includes('fonts.googleapis.com') || url.includes('fonts.gstatic.com')
+      || url.includes('licenses.json') || url.includes('cdnjs.cloudflare.com')
+      || url.includes('tessdata') || url.includes('tesseract') || url.includes('pdf.js') || url.includes('pdf.worker')) {
     event.respondWith(
       fetch(event.request).catch(() => caches.match(event.request))
     );
     return;
   }
+
+  if (url.endsWith('index.html') || url.endsWith('/') || url.endsWith('manifest.json')) {
+    event.respondWith(
+      fetch(event.request)
+        .then((res) => {
+          const clone = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          return res;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then((cached) => cached || fetch(event.request))
   );

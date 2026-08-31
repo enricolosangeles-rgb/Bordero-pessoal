@@ -34,7 +34,14 @@
   --shadow: rgba(0,0,0,0.4);
 }
 
-*{box-sizing:border-box;}
+*{box-sizing:border-box;-webkit-tap-highlight-color:rgba(184,145,47,0.35);}
+html{accent-color:var(--gold);}
+input, select, textarea{accent-color:var(--gold);}
+::selection{background:rgba(184,145,47,0.35);color:var(--text);}
+a{-webkit-tap-highlight-color:rgba(184,145,47,0.35);}
+button, .btn, .qa-btn, .tab-btn, .icon-btn, .quick-row-item, .confirm-btn{
+  -webkit-tap-highlight-color:rgba(184,145,47,0.35);
+}
 body{
   margin:0;
   background:var(--bg);
@@ -183,6 +190,10 @@ input:checked + .slider:before{transform:translateX(17px);background:var(--gold)
 .btn.ghost{background:transparent;color:var(--text-muted);border-color:var(--line);}
 .btn.small{padding:8px 12px;font-size:12.5px;}
 .btn-row{display:flex;gap:10px;margin-top:22px;flex-wrap:wrap;}
+button:focus, button:focus-visible, .btn:focus, .btn:focus-visible,
+.tab-btn:focus, .tab-btn:focus-visible, .icon-btn:focus, .icon-btn:focus-visible{
+  outline:2px solid var(--gold-dim);outline-offset:1px;
+}
 
 .icon-btn{background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:15px;padding:4px 6px;}
 .icon-btn:hover{color:var(--gold);}

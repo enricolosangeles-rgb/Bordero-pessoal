@@ -453,6 +453,12 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield;}
         <input type="text" id="f_contratoNumero" placeholder="Ex: 4521">
       </div>
     </div>
+    <div class="field">
+      <label>Produto (opcional)</label>
+      <select id="f_produto" onchange="applyProdutoSelecionado()">
+        <option value="">— Selecionar da tabela de preços —</option>
+      </select>
+    </div>
     <div class="two-col">
       <div class="field">
         <label>Data da venda</label>
@@ -609,6 +615,14 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield;}
     </p>
     <div id="projectListEdit"></div>
 
+    <div class="section-title" style="margin-top:20px;">Produtos e tabela de preços</div>
+    <p style="color:var(--text-muted);font-size:12.5px;margin:-4px 0 10px;">
+      Cada produto guarda o valor à vista (usado pra comissão) e o valor total do contrato (usado na meta/VGV).
+      Ao lançar uma venda, selecione o produto e os dois campos são preenchidos sozinhos.
+    </p>
+    <div id="produtoListEdit"></div>
+    <button class="btn ghost small" id="addProdutoBtn" style="margin-top:6px;">+ Novo produto</button>
+
     <div class="section-title" style="margin-top:20px;">Sincronização em nuvem</div>
     <p style="color:var(--text-muted);font-size:12.5px;margin:-4px 0 10px;">
       Usa o <b>jsonbin.io</b> (gratuito) para salvar seus dados na nuvem e acessar de qualquer dispositivo.
@@ -645,7 +659,7 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield;}
 
 <script>
 const MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-let DATA = { settings:{margemCancelamento:0.2}, projects:[], sales:[], metas:{} };
+let DATA = { settings:{margemCancelamento:0.2}, projects:[], sales:[], metas:{}, produtos:[] };
 let editingSaleId = null;
 
 function fmt(n){ return (n||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}); }
@@ -740,14 +754,54 @@ async function loadData(){
   DATA = {
     settings:{margemCancelamento:0.2},
     projects:[],
-    sales:[]
+    sales:[],
+    metas:{},
+    produtos: defaultProdutos()
   };
   await saveData();
 }
+function defaultProdutos(){
+  return [
+    {id:'prod_150k', nome:'ZEC 150.000 pontos', valorVista:23779, valorContrato:30600},
+    {id:'prod_300k', nome:'ZEC 300.000 pontos', valorVista:43861, valorContrato:60000},
+    {id:'prod_450k', nome:'ZEC 450.000 pontos', valorVista:65303, valorContrato:87889},
+    {id:'prod_600k', nome:'ZEC 600.000 pontos', valorVista:84063, valorContrato:113138},
+    {id:'prod_750k', nome:'ZEC 750.000 pontos', valorVista:97628, valorContrato:137531},
+    {id:'prod_1m',   nome:'ZEC 1.000.000 pontos', valorVista:128507, valorContrato:181031},
+  ];
+}
+// Valores antigos (versão anterior), usados só pra detectar e corrigir automaticamente
+// produtos que o usuário ainda não editou manualmente (ver migrate()).
+function produtosAntigosParaCorrigir(){
+  return {
+    prod_150k: {valorVista:23779.44, valorContrato:25850.95},
+    prod_300k: {valorVista:43860.80, valorContrato:46309.14},
+    prod_450k: {valorVista:65302.51, valorContrato:86377.74},
+    prod_600k: {valorVista:84063.49, valorContrato:111193.48},
+    prod_750k: {valorVista:97628.20, valorContrato:123404.40},
+    prod_1m:   {valorVista:128506.64, valorContrato:162435.49},
+  };
+}
+
 function migrate(){
   if(!DATA.settings) DATA.settings = {margemCancelamento:0.2};
   if(DATA.settings.margemCancelamento === undefined) DATA.settings.margemCancelamento = 0.2;
   if(!DATA.metas) DATA.metas = {};
+  if(!DATA.produtos || DATA.produtos.length===0) DATA.produtos = defaultProdutos();
+  // Corrige silenciosamente produtos que ainda têm os valores antigos (versão anterior da tabela),
+  // sem sobrescrever nada que o usuário já tenha editado manualmente.
+  const antigos = produtosAntigosParaCorrigir();
+  const novos = defaultProdutos();
+  DATA.produtos.forEach(p=>{
+    const antigo = antigos[p.id];
+    const novo = novos.find(n=>n.id===p.id);
+    if(antigo && novo &&
+       Math.abs(p.valorVista - antigo.valorVista) < 0.01 &&
+       Math.abs(p.valorContrato - antigo.valorContrato) < 0.01){
+      p.valorVista = novo.valorVista;
+      p.valorContrato = novo.valorContrato;
+    }
+  });
   // migra fixo global antigo para o primeiro projeto
   const oldFixo = DATA.settings.fixoMensal;
   const oldInclude = DATA.settings.includeFixo;
@@ -767,6 +821,7 @@ function migrate(){
     if(s.contratoNumero===undefined) s.contratoNumero = '';
     if(s.cliente===undefined) s.cliente = '';
     if(s.valorContrato===undefined) s.valorContrato = s.valor; // vendas antigas: mesmo valor até serem editadas
+    if(s.produtoId===undefined) s.produtoId = null;
     if(s.dataCancelamento===undefined) s.dataCancelamento = null;
     if(s.recebimentos===undefined) s.recebimentos = {};
     // migra formato antigo (true/false) para objeto {valor, divergente}
@@ -1353,6 +1408,7 @@ document.getElementById('f_status').addEventListener('change', e=>{
 function openSaleForm(sale){
   editingSaleId = sale ? sale.id : null;
   populateProjectSelect();
+  populateProdutoSelect();
   document.getElementById('saleFormTitle').textContent = sale ? 'Editar venda' : 'Nova venda';
   document.getElementById('deleteSale').style.display = sale ? 'inline-block' : 'none';
   document.getElementById('newProjectField').style.display='none';
@@ -1361,6 +1417,7 @@ function openSaleForm(sale){
 
   document.getElementById('f_project').value = sale ? sale.projectId : (DATA.projects[0]?.id || '__new__');
   document.getElementById('f_newProjectName').value='';
+  document.getElementById('f_produto').value = sale ? (sale.produtoId||'') : '';
   document.getElementById('f_date').value = sale ? sale.date : new Date().toISOString().slice(0,10);
   document.getElementById('f_cliente').value = sale ? (sale.cliente||'') : '';
   document.getElementById('f_contratoNumero').value = sale ? (sale.contratoNumero||'') : '';
@@ -1377,6 +1434,22 @@ function openSaleForm(sale){
   document.getElementById('saleOverlay').classList.add('open');
 }
 function closeSaleForm(){ document.getElementById('saleOverlay').classList.remove('open'); }
+
+function populateProdutoSelect(){
+  const sel = document.getElementById('f_produto');
+  const produtos = DATA.produtos || [];
+  sel.innerHTML = '<option value="">— Selecionar da tabela de preços —</option>' +
+    produtos.map(p=>`<option value="${p.id}">${p.nome} (${fmt(p.valorVista)} à vista)</option>`).join('');
+}
+
+window.applyProdutoSelecionado = function(){
+  const id = document.getElementById('f_produto').value;
+  if(!id) return;
+  const p = (DATA.produtos||[]).find(x=>x.id===id);
+  if(!p) return;
+  document.getElementById('f_valor').value = p.valorVista;
+  document.getElementById('f_valorContrato').value = p.valorContrato;
+};
 
 window.editSale = function(id){
   const s = DATA.sales.find(x=>x.id===id);
@@ -1740,6 +1813,7 @@ document.getElementById('saveSale').onclick = async ()=>{
   const saleObj = {
     id: editingSaleId || ('s'+Date.now()),
     projectId, date,
+    produtoId: document.getElementById('f_produto').value || null,
     quantidade: parseInt(document.getElementById('f_qty').value)||1,
     valor,
     valorContrato,
@@ -1826,6 +1900,7 @@ document.getElementById('openSettings').onclick = ()=>{
   document.getElementById('c_bin').value = bin;
   setSyncStatus(key && bin ? 'Configurado.' : 'Não configurado.');
   renderProjectListEdit();
+  renderProdutoListEdit();
   document.getElementById('settingsOverlay').classList.add('open');
 };
 document.getElementById('closeSettings').onclick = ()=>{
@@ -1838,7 +1913,8 @@ document.getElementById('wipeData').onclick = async ()=>{
   const conf2 = window.prompt('Pra confirmar, digite APAGAR (em maiúsculas):');
   if(conf2 !== 'APAGAR') return;
 
-  DATA = { settings:{margemCancelamento:0.2}, projects:[], sales:[], metas:{} };
+  const produtosPreservados = DATA.produtos || defaultProdutos();
+  DATA = { settings:{margemCancelamento:0.2}, projects:[], sales:[], metas:{}, produtos: produtosPreservados };
   await saveData();
   document.getElementById('settingsOverlay').classList.remove('open');
   render();
@@ -1979,6 +2055,44 @@ window.removeProject = function(id){
   renderProjectListEdit();
 };
 
+function renderProdutoListEdit(){
+  const el = document.getElementById('produtoListEdit');
+  const produtos = DATA.produtos || [];
+  el.innerHTML = produtos.map(p=>`
+    <div class="project-card">
+      <div class="field">
+        <label>Nome do produto</label>
+        <input type="text" value="${p.nome}" data-pid="${p.id}" class="prod-nome-input" placeholder="Nome do produto">
+      </div>
+      <div class="two-col">
+        <div class="field">
+          <label>Valor à vista (R$)</label>
+          <input type="number" value="${p.valorVista||0}" data-pid="${p.id}" class="prod-vista-input" step="0.01" placeholder="0,00">
+        </div>
+        <div class="field">
+          <label>Valor total do contrato (R$)</label>
+          <input type="number" value="${p.valorContrato||0}" data-pid="${p.id}" class="prod-contrato-input" step="0.01" placeholder="0,00">
+        </div>
+      </div>
+      <div class="project-card-footer">
+        <button class="icon-btn" onclick="removeProduto('${p.id}')">🗑 remover produto</button>
+      </div>
+    </div>
+  `).join('');
+}
+window.removeProduto = function(id){
+  DATA.produtos = (DATA.produtos||[]).filter(p=>p.id!==id);
+  renderProdutoListEdit();
+};
+document.getElementById('addProdutoBtn').onclick = ()=>{
+  if(!DATA.produtos) DATA.produtos = [];
+  DATA.produtos.push({id:'prod'+Date.now(), nome:'Novo produto', valorVista:0, valorContrato:0});
+  renderProdutoListEdit();
+  const inputs = document.querySelectorAll('.prod-nome-input');
+  const last = inputs[inputs.length-1];
+  if(last){ last.focus(); last.select(); }
+};
+
 document.getElementById('saveSettings').onclick = async ()=>{
   DATA.settings.margemCancelamento = (parseFloat(document.getElementById('s_margem').value)||0)/100;
   document.querySelectorAll('.proj-name-input').forEach(inp=>{
@@ -2012,6 +2126,18 @@ document.getElementById('saveSettings').onclick = async ()=>{
   document.querySelectorAll('.proj-include-input').forEach(inp=>{
     const p = DATA.projects.find(x=>x.id===inp.dataset.pid);
     if(p) p.includeFixo = inp.checked;
+  });
+  document.querySelectorAll('.prod-nome-input').forEach(inp=>{
+    const p = (DATA.produtos||[]).find(x=>x.id===inp.dataset.pid);
+    if(p) p.nome = inp.value.trim() || p.nome;
+  });
+  document.querySelectorAll('.prod-vista-input').forEach(inp=>{
+    const p = (DATA.produtos||[]).find(x=>x.id===inp.dataset.pid);
+    if(p) p.valorVista = parseFloat(inp.value)||0;
+  });
+  document.querySelectorAll('.prod-contrato-input').forEach(inp=>{
+    const p = (DATA.produtos||[]).find(x=>x.id===inp.dataset.pid);
+    if(p) p.valorContrato = parseFloat(inp.value)||0;
   });
   await saveData();
   document.getElementById('settingsOverlay').classList.remove('open');

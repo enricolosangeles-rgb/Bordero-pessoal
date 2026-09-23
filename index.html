@@ -1555,9 +1555,36 @@ document.getElementById('borderoFile').onchange = async (e)=>{
 // que é o layout de borderôs mais completos (ex: imobiliárias/clubes com % de comissão por linha).
 // Se não achar nada nesse formato, cai pro formato simples (uma linha = um contrato + um valor).
 function parseBorderoAny(text){
+  const zagaia = parseBorderoZagaiaExtrato(text);
+  if(zagaia.length > 0) return zagaia;
   const rich = parseBorderoTable(text);
   if(rich.length > 0) return rich;
   return parseBorderoText(text);
+}
+
+// Formato "Extrato de Comissão" da Zagaia: contrato aparece como 00529Z300.000 (1/8),
+// seguido de dois valores (previsto e efetivado). O número real do contrato no app
+// não tem os zeros à esquerda nem o ".000" final (00529Z300.000 -> 529Z300).
+// Só cria candidato quando o valor efetivado é maior que zero (dinheiro que realmente entrou);
+// linhas de cancelamento/renegociação (efetivado = 0,00) são ignoradas.
+function parseBorderoZagaiaExtrato(text){
+  const toNum = (s) => parseFloat(s.replace(/\./g,'').replace(',', '.'));
+  const lineRegex = /(\d+[A-Za-z]\d+)\.000\s*\((\d+)\/(\d+)\)\s+([\d.,]+)\s+([\d.,]+)\s*$/gm;
+  const candidates = [];
+  let m;
+  while((m = lineRegex.exec(text)) !== null){
+    const [, bruto, parcelaN, parcelaTotal, previstoStr, efetivadoStr] = m;
+    const efetivado = toNum(efetivadoStr);
+    if(!efetivado || efetivado <= 0) continue; // nada foi pago nessa linha (cancelamento/renegociação)
+    const contrato = bruto.replace(/^0+/, '');
+    candidates.push({
+      contrato,
+      valor: efetivado,
+      parcelaNum: parseInt(parcelaN),
+      rawLine: `${contrato} — parcela ${parcelaN}/${parcelaTotal}`
+    });
+  }
+  return candidates;
 }
 
 // Formato de tabela rica: cada linha pode ter o mesmo contrato repetido (taxas de comissão diferentes).
@@ -1617,18 +1644,27 @@ function parseBorderoText(text){
   return candidates;
 }
 
-// Casa cada linha identificada com a venda/parcela pendente correspondente
+// Casa cada linha identificada com a venda/parcela correspondente.
+// Se o candidato trouxer o número exato da parcela (parcelaNum), casa por esse número;
+// senão, usa a primeira parcela ainda pendente daquele contrato (comportamento antigo).
 function matchBorderoCandidates(candidates){
   return candidates.map(c=>{
     const sale = DATA.sales.find(s => (s.contratoNumero||'').toUpperCase() === c.contrato.toUpperCase());
     if(!sale) return { ...c, status:'no-sale' };
 
     const spread = saleEffectiveSpread(sale);
-    const pendingEntry = spread.find(e => !(sale.recebimentos && sale.recebimentos[e.n]));
-    if(!pendingEntry) return { ...c, status:'no-parcela', sale };
+    let entry;
+    if(c.parcelaNum){
+      entry = spread.find(e => e.n === c.parcelaNum);
+    } else {
+      entry = spread.find(e => !(sale.recebimentos && sale.recebimentos[e.n]));
+    }
+    if(!entry) return { ...c, status:'no-parcela', sale };
 
-    const divergente = Math.abs(c.valor - pendingEntry.value) > 0.005;
-    return { ...c, status: divergente ? 'divergente' : 'ok', sale, entry: pendingEntry };
+    const jaRecebida = sale.recebimentos && sale.recebimentos[entry.n];
+    const divergente = Math.abs(c.valor - entry.value) > 0.005;
+    if(jaRecebida && !divergente) return { ...c, status:'ja-recebida', sale, entry };
+    return { ...c, status: divergente ? 'divergente' : 'ok', sale, entry };
   });
 }
 
@@ -1642,11 +1678,14 @@ function renderBorderoResults(matches){
       statusLabel = 'Contrato não encontrado'; statusClass = 'no';
       sub = `Lido: ${m.contrato} · ${fmt(m.valor)}`;
     } else if(m.status === 'no-parcela'){
-      statusLabel = 'Sem parcela pendente'; statusClass = 'no';
+      statusLabel = 'Parcela não encontrada'; statusClass = 'no';
       sub = `${m.sale.cliente || m.sale.contratoNumero} · ${fmt(m.valor)}`;
     } else if(m.status === 'divergente'){
       statusLabel = 'Divergente'; statusClass = 'div';
       sub = `Previsto: ${fmt(m.entry.value)} · Lido: ${fmt(m.valor)}`;
+    } else if(m.status === 'ja-recebida'){
+      statusLabel = 'Já confirmada'; statusClass = 'no';
+      sub = `${m.sale.cliente || ''} · ${fmt(m.valor)} (parcela já estava marcada)`;
     } else {
       statusLabel = 'Confere'; statusClass = 'ok';
       sub = `${m.sale.cliente || ''} · ${fmt(m.valor)}`;

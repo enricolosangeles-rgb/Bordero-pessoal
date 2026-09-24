@@ -71,6 +71,13 @@ header p{margin:3px 0 0;color:var(--text-muted);font-size:13px;}
 .tab-btn.active{background:var(--gold-soft);border-color:var(--gold-dim);color:var(--gold);}
 
 .summary-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px;}
+.summary-row.only-three .summary-card:last-child{grid-column:1 / -1;}
+
+.mes-ref-select{
+  background:var(--surface-2);border:1px solid var(--line);color:var(--gold);
+  border-radius:8px;padding:6px 10px;font-size:12.5px;font-weight:600;
+  font-family:'Inter',sans-serif;
+}
 .summary-card{
   background:var(--surface);
   border:1px solid var(--line);
@@ -91,9 +98,9 @@ header p{margin:3px 0 0;color:var(--text-muted);font-size:13px;}
   margin-bottom:16px;
   text-align:center;
 }
-#ocrStatus{font-size:12px;color:var(--text-muted);margin-top:8px;min-height:14px;}
-#ocrStatus.ok{color:var(--green);}
-#ocrStatus.err{color:var(--red);}
+#borderoStatus{font-size:12px;color:var(--text-muted);margin-top:8px;min-height:14px;}
+#borderoStatus.ok{color:var(--green);}
+#borderoStatus.err{color:var(--red);}
 
 .bordero-row{
   display:flex;align-items:center;justify-content:space-between;gap:10px;
@@ -340,7 +347,10 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield;}
   <div id="panelView">
     <div class="list-card" id="metaCard"></div>
 
-    <div class="section-title">Previsão de Recebimentos</div>
+    <div class="meta-head" style="margin-top:0;">
+      <span class="section-title" style="margin:0;">Previsão de Recebimentos</span>
+      <select id="mesReferenciaSelect" class="mes-ref-select"></select>
+    </div>
     <div class="summary-row" id="summaryRow"></div>
 
     <div class="section-title">Projeção mensal</div>
@@ -420,12 +430,6 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield;}
 <div class="overlay" id="saleOverlay">
   <div class="sheet">
     <h2 id="saleFormTitle">Nova venda</h2>
-
-    <div class="ocr-box">
-      <button type="button" class="btn ghost small" id="ocrBtn">📷 Ler documento (foto)</button>
-      <input type="file" id="ocrFile" accept="image/*" capture="environment" style="display:none;">
-      <div id="ocrStatus"></div>
-    </div>
 
     <div class="field">
       <label>Projeto</label>
@@ -1022,8 +1026,39 @@ function comissaoCicloAtual(){
   return total;
 }
 
+let mesReferenciaSelecionado = null; // null = mês atual
+
+function populateMesReferenciaSelect(){
+  const sel = document.getElementById('mesReferenciaSelect');
+  const hoje = new Date();
+  const opcoes = [];
+  // 3 meses pra trás até 12 meses pra frente, a partir do mês atual
+  for(let i=-3; i<=12; i++){
+    let y = hoje.getFullYear(), m = hoje.getMonth() + i;
+    while(m<0){ m+=12; y--; }
+    while(m>11){ m-=12; y++; }
+    const key = monthKey(y,m);
+    const label = new Date(y, m, 1).toLocaleDateString('pt-BR', {month:'long', year:'numeric'});
+    opcoes.push({key, label});
+  }
+  const valorAtual = sel.value || currentMonthKey();
+  sel.innerHTML = opcoes.map(o=>{
+    const rotulo = o.key===currentMonthKey() ? `${o.label} (atual)` : o.label;
+    return `<option value="${o.key}">${rotulo}</option>`;
+  }).join('');
+  sel.value = opcoes.some(o=>o.key===valorAtual) ? valorAtual : currentMonthKey();
+  mesReferenciaSelecionado = sel.value;
+}
+
+document.getElementById('mesReferenciaSelect').addEventListener('change', (e)=>{
+  mesReferenciaSelecionado = e.target.value;
+  renderSummary();
+});
+
 function renderSummary(){
   const curKey = currentMonthKey();
+  const refKey = mesReferenciaSelecionado || curKey;
+  const vendoMesAtual = refKey === curKey;
 
   let recebidoMes = 0;
   let aReceberMes = 0;
@@ -1033,40 +1068,65 @@ function renderSummary(){
     const spread = saleEffectiveSpread(sale);
     spread.forEach(entry=>{
       const rec = sale.recebimentos && sale.recebimentos[entry.n];
-      if(entry.key === curKey){
+      if(entry.key === refKey){
         if(rec) recebidoMes += rec.valor;
         else aReceberMes += entry.value;
-      } else if(entry.key > curKey){
+      } else if(entry.key > refKey){
         futurasTotais += entry.value;
       }
     });
   });
 
   const fixoTotal = DATA.projects
-    .filter(p=>p.includeFixo && (!p.mesInicioFixo || curKey>=p.mesInicioFixo))
+    .filter(p=>p.includeFixo && (!p.mesInicioFixo || refKey>=p.mesInicioFixo))
     .reduce((a,p)=>a+(p.fixoMensal||0),0);
   aReceberMes += fixoTotal;
 
-  const cicloAtual = comissaoCicloAtual();
+  const rotuloRecebido = vendoMesAtual ? 'Recebido este mês' : 'Recebido nesse mês';
+  const rotuloAReceber = vendoMesAtual ? 'A receber este mês' : 'A receber nesse mês';
+  const rotuloFuturas = vendoMesAtual ? 'Comissões futuras totais' : 'Comissões futuras (após esse mês)';
 
-  document.getElementById('summaryRow').innerHTML = `
-    <div class="summary-card">
-      <div class="label">Recebido este mês</div>
-      <div class="value">${fmt(recebidoMes)}</div>
-    </div>
-    <div class="summary-card muted">
-      <div class="label">A receber este mês</div>
-      <div class="value">${fmt(aReceberMes)}</div>
-    </div>
-    <div class="summary-card muted">
-      <div class="label">Comissão do ciclo atual (parcela)</div>
-      <div class="value">${fmt(cicloAtual)}</div>
-    </div>
-    <div class="summary-card muted">
-      <div class="label">Comissões futuras totais</div>
-      <div class="value">${fmt(futurasTotais)}</div>
-    </div>
-  `;
+  const summaryRow = document.getElementById('summaryRow');
+
+  if(vendoMesAtual){
+    const cicloAtual = comissaoCicloAtual();
+    summaryRow.className = 'summary-row';
+    summaryRow.innerHTML = `
+      <div class="summary-card">
+        <div class="label">${rotuloRecebido}</div>
+        <div class="value">${fmt(recebidoMes)}</div>
+      </div>
+      <div class="summary-card muted">
+        <div class="label">${rotuloAReceber}</div>
+        <div class="value">${fmt(aReceberMes)}</div>
+      </div>
+      <div class="summary-card muted">
+        <div class="label">Comissão do ciclo atual (parcela)</div>
+        <div class="value">${fmt(cicloAtual)}</div>
+      </div>
+      <div class="summary-card muted">
+        <div class="label">${rotuloFuturas}</div>
+        <div class="value">${fmt(futurasTotais)}</div>
+      </div>
+    `;
+  } else {
+    // Mês diferente do atual: sem o card de "ciclo atual" (esse é sempre relativo a hoje)
+    summaryRow.className = 'summary-row only-three';
+    summaryRow.innerHTML = `
+      <div class="summary-card">
+        <div class="label">${rotuloRecebido}</div>
+        <div class="value">${fmt(recebidoMes)}</div>
+      </div>
+      <div class="summary-card muted">
+        <div class="label">${rotuloAReceber}</div>
+        <div class="value">${fmt(aReceberMes)}</div>
+      </div>
+      <div class="summary-card muted">
+        <div class="label">${rotuloFuturas}</div>
+        <div class="value">${fmt(futurasTotais)}</div>
+      </div>
+    `;
+  }
 }
 
 // ---------- Gráfico de linha ----------
@@ -1332,8 +1392,6 @@ function openSaleForm(sale){
   document.getElementById('saleFormTitle').textContent = sale ? 'Editar venda' : 'Nova venda';
   document.getElementById('deleteSale').style.display = sale ? 'inline-block' : 'none';
   document.getElementById('newProjectField').style.display='none';
-  document.getElementById('ocrStatus').className = '';
-  document.getElementById('ocrStatus').textContent = '';
 
   document.getElementById('f_project').value = sale ? sale.projectId : (DATA.projects[0]?.id || '__new__');
   document.getElementById('f_newProjectName').value='';
@@ -1375,100 +1433,6 @@ window.editSale = function(id){
   const s = DATA.sales.find(x=>x.id===id);
   if(s) openSaleForm(s);
 };
-
-// ---------- OCR: leitura de documento por foto ----------
-document.getElementById('ocrBtn').onclick = ()=> document.getElementById('ocrFile').click();
-
-document.getElementById('ocrFile').onchange = async (e)=>{
-  const file = e.target.files[0];
-  if(!file) return;
-  const statusEl = document.getElementById('ocrStatus');
-  statusEl.className = '';
-  statusEl.textContent = 'Lendo o documento...';
-
-  try{
-    const { data: { text } } = await Tesseract.recognize(file, 'por', {
-      logger: m => {
-        if(m.status === 'recognizing text'){
-          statusEl.textContent = `Lendo o documento... ${Math.round(m.progress*100)}%`;
-        }
-      }
-    });
-    const found = applyOcrGuesses(text);
-    statusEl.className = 'ok';
-    statusEl.textContent = found.length
-      ? `Preenchido automaticamente: ${found.join(', ')}. Confira antes de salvar.`
-      : 'Não consegui identificar os campos automaticamente. Preencha manualmente.';
-  }catch(err){
-    statusEl.className = 'err';
-    statusEl.textContent = 'Não foi possível ler a imagem. Preencha manualmente.';
-  }
-  e.target.value = '';
-};
-
-function applyOcrGuesses(text){
-  const found = [];
-  const clean = text.replace(/\r/g,'');
-  const toNum = (s) => parseFloat(s.replace(/\./g,'').replace(',', '.'));
-
-  // Valor à vista: base usada pra calcular comissão
-  const valorVistaMatch = clean.match(
-    /Valor\s+[àa]\s*Vista\s*[:\s]*R?\$?\s*(\d{1,3}(?:\.\d{3})*,\d{2})/i
-  );
-  // Valor total do contrato: usado na meta/VGV (geralmente maior, inclui juros do parcelamento)
-  const valorContratoMatch = clean.match(
-    /(?:Valor\s+Total(?:\s+do\s+(?:Contrato|Produto))?|Valor\s+do\s+Contrato|Pre[çc]o\s+Total|Valor\s+do\s+Pacote|Investimento\s+Total)\s*[:\s]*R?\$?\s*(\d{1,3}(?:\.\d{3})*,\d{2})/i
-  );
-
-  if(valorVistaMatch){
-    document.getElementById('f_valor').value = toNum(valorVistaMatch[1]);
-    found.push('valor à vista');
-  }
-  if(valorContratoMatch){
-    document.getElementById('f_valorContrato').value = toNum(valorContratoMatch[1]);
-    found.push('valor do contrato');
-  }
-
-  // Se não achou nenhum dos dois rótulos específicos, usa o MAIOR valor em R$ do documento
-  // como último recurso e preenche os dois campos com ele (revisar antes de salvar).
-  if(!valorVistaMatch && !valorContratoMatch){
-    const allValues = [...clean.matchAll(/R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})/g)]
-      .map(m => toNum(m[1]))
-      .filter(n => !isNaN(n));
-    if(allValues.length){
-      const max = Math.max(...allValues);
-      document.getElementById('f_valor').value = max;
-      document.getElementById('f_valorContrato').value = max;
-      found.push('valor');
-    }
-  }
-
-  // Número de contrato: cobre "Contrato n.º", "Nº do contrato", "Ref.", "Referência" etc,
-  // capturando códigos alfanuméricos com traço/barra tipo VC-100-0003.
-  const contratoMatch =
-    clean.match(/Contrato\s*n[.\s]*[ºo°]?\s*[:\s]*([A-Za-z0-9]+(?:[\-\/][A-Za-z0-9]+)*)/i) ||
-    clean.match(/N[ºo°]?\s*(?:do\s*)?contrato\s*[:\s]*([A-Za-z0-9]+(?:[\-\/][A-Za-z0-9]+)*)/i) ||
-    clean.match(/(?:Refer[êe]ncia|Ref\.?)\s*[:\s]*([A-Za-z0-9]+(?:[\-\/][A-Za-z0-9]+)*)/i) ||
-    clean.match(/contrato[:\s]+([A-Za-z0-9]+(?:[\-\/][A-Za-z0-9]+)*)/i) ||
-    clean.match(/n[ºo°]\s*[:\s]*([A-Za-z0-9]+(?:[\-\/][A-Za-z0-9]+)*)/i);
-  if(contratoMatch){
-    document.getElementById('f_contratoNumero').value = contratoMatch[1].trim();
-    found.push('contrato');
-  }
-
-  // Nome do cliente: cobre os rótulos mais comuns usados em contratos de clubes/pontos/imóveis
-  // (Cliente, Nome, Cessionário/a, Comprador/a, Adquirente, Titular, Contratante).
-  // Usa [ \t]+ entre palavras (não \s+) pra não "vazar" pra próxima linha do documento.
-  const clienteMatch = clean.match(
-    /(?:cliente|nome(?:\s+completo)?|cession[aá]ri[oa](?:\s*[iI1]\b)?|comprador[a]?|adquirente|titular|contratante)[:\s]+([A-ZÀ-Úa-zà-ú]+(?:[ \t]+[A-ZÀ-Úa-zà-ú]+){1,5})/i
-  );
-  if(clienteMatch){
-    document.getElementById('f_cliente').value = clienteMatch[1].trim();
-    found.push('cliente');
-  }
-
-  return found;
-}
 
 // ---------- Leitura do Borderô (PDF ou imagem) ----------
 if(window.pdfjsLib){
@@ -2103,6 +2067,7 @@ async function validateLicenseFlow(){
 
 async function startApp(){
   await loadData();
+  populateMesReferenciaSelect();
   render();
 }
 

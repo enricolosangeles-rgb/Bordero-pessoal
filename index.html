@@ -736,12 +736,27 @@ function migrate(){
     if(s.produtoId===undefined) s.produtoId = null;
     if(s.dataCancelamento===undefined) s.dataCancelamento = null;
     if(s.recebimentos===undefined) s.recebimentos = {};
-    // migra formato antigo (true/false) para objeto {valor, divergente}
+    // migra formato antigo (true/false) para objeto {valor, divergente, mesConfirmacao}
     Object.keys(s.recebimentos).forEach(n=>{
       const r = s.recebimentos[n];
-      if(r === true) s.recebimentos[n] = {valor:null, divergente:false};
-      else if(r && typeof r === 'object'){ /* já no formato novo */ }
+      if(r === true) s.recebimentos[n] = {valor:null, divergente:false, mesConfirmacao:null};
+      else if(r && typeof r === 'object'){
+        if(r.mesConfirmacao===undefined) r.mesConfirmacao = null; // preenchido abaixo, com o vencimento calculado como estimativa
+      }
       else delete s.recebimentos[n];
+    });
+  });
+  // Preenche mesConfirmacao ausente (registros antigos) com o mês de vencimento calculado da parcela,
+  // já que não sabemos em qual mês a confirmação realmente aconteceu.
+  DATA.sales.forEach(s=>{
+    if(!s.recebimentos) return;
+    const spread = saleEffectiveSpread(s);
+    Object.keys(s.recebimentos).forEach(n=>{
+      const r = s.recebimentos[n];
+      if(r && r.mesConfirmacao===null){
+        const entry = spread.find(e=>e.n===parseInt(n));
+        r.mesConfirmacao = entry ? entry.key : currentMonthKey();
+      }
     });
   });
 }
@@ -1068,11 +1083,14 @@ function renderSummary(){
     const spread = saleEffectiveSpread(sale);
     spread.forEach(entry=>{
       const rec = sale.recebimentos && sale.recebimentos[entry.n];
-      if(entry.key === refKey){
-        if(rec) recebidoMes += rec.valor;
-        else aReceberMes += entry.value;
-      } else if(entry.key > refKey){
-        futurasTotais += entry.value;
+      if(rec){
+        // Já recebido: conta no mês em que você de fato confirmou o recebimento,
+        // não no mês de vencimento que o app calculou (que é só uma previsão).
+        if(rec.mesConfirmacao === refKey) recebidoMes += rec.valor;
+      } else {
+        // Ainda pendente: usa o vencimento calculado (é uma previsão, não um fato ainda).
+        if(entry.key === refKey) aReceberMes += entry.value;
+        else if(entry.key > refKey) futurasTotais += entry.value;
       }
     });
   });
@@ -1334,7 +1352,7 @@ window.toggleRecebido = async function(saleId, n, expectedValue){
   }
 
   const divergente = Math.abs(valor - expectedValue) > 0.005;
-  sale.recebimentos[n] = { valor, divergente };
+  sale.recebimentos[n] = { valor, divergente, mesConfirmacao: currentMonthKey() };
   await saveData();
   renderReport();
 };
@@ -1674,7 +1692,7 @@ window.applyBorderoMatch = async function(idx){
   const m = window._borderoMatches[idx];
   if(!m || !m.sale || !m.entry) return;
   if(!m.sale.recebimentos) m.sale.recebimentos = {};
-  m.sale.recebimentos[m.entry.n] = { valor: m.valor, divergente: m.status==='divergente' };
+  m.sale.recebimentos[m.entry.n] = { valor: m.valor, divergente: m.status==='divergente', mesConfirmacao: currentMonthKey() };
   await saveData();
   render();
   document.getElementById('borderoStatus').className = 'ok';
@@ -1687,7 +1705,7 @@ document.getElementById('borderoApplyAll').onclick = async ()=>{
   for(const m of matches){
     if((m.status === 'ok' || m.status === 'divergente') && m.sale && m.entry){
       if(!m.sale.recebimentos) m.sale.recebimentos = {};
-      m.sale.recebimentos[m.entry.n] = { valor: m.valor, divergente: m.status==='divergente' };
+      m.sale.recebimentos[m.entry.n] = { valor: m.valor, divergente: m.status==='divergente', mesConfirmacao: currentMonthKey() };
       count++;
     }
   }

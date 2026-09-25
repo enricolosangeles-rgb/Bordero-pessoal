@@ -583,6 +583,11 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield;}
       Envie o PDF ou foto do borderô que a empresa mandou. O app tenta identificar o número do contrato e o valor pago em cada linha, e compara com o previsto.
     </p>
 
+    <div class="field">
+      <label>Contar como recebido em qual mês?</label>
+      <select id="borderoMesSelect"></select>
+    </div>
+
     <div class="ocr-box">
       <button type="button" class="btn ghost small" id="borderoBtn">📄 Selecionar PDF ou foto</button>
       <input type="file" id="borderoFile" accept="image/*,application/pdf" style="display:none;">
@@ -1351,8 +1356,16 @@ window.toggleRecebido = async function(saleId, n, expectedValue){
     if(!isNaN(parsed)) valor = parsed;
   }
 
+  const sugestaoMes = mesReferenciaSelecionado || currentMonthKey();
+  const mesResp = window.prompt(
+    'Em qual mês isso deve contar como recebido? (formato AAAA-MM)',
+    sugestaoMes
+  );
+  if(mesResp === null) return; // cancelou
+  const mesConfirmacao = /^\d{4}-\d{2}$/.test(mesResp.trim()) ? mesResp.trim() : sugestaoMes;
+
   const divergente = Math.abs(valor - expectedValue) > 0.005;
-  sale.recebimentos[n] = { valor, divergente, mesConfirmacao: currentMonthKey() };
+  sale.recebimentos[n] = { valor, divergente, mesConfirmacao };
   await saveData();
   renderReport();
 };
@@ -1462,8 +1475,31 @@ function openBorderoReader(){
   document.getElementById('borderoStatus').textContent = '';
   document.getElementById('borderoResults').innerHTML = '';
   document.getElementById('borderoApplyAll').style.display = 'none';
+  populateBorderoMesSelect();
   document.getElementById('borderoOverlay').classList.add('open');
 }
+
+function populateBorderoMesSelect(){
+  const sel = document.getElementById('borderoMesSelect');
+  const hoje = new Date();
+  const opcoes = [];
+  for(let i=-3; i<=3; i++){
+    let y = hoje.getFullYear(), m = hoje.getMonth() + i;
+    while(m<0){ m+=12; y--; }
+    while(m>11){ m-=12; y++; }
+    const key = monthKey(y,m);
+    const label = new Date(y, m, 1).toLocaleDateString('pt-BR', {month:'long', year:'numeric'});
+    opcoes.push({key, label});
+  }
+  sel.innerHTML = opcoes.map(o=>{
+    const rotulo = o.key===currentMonthKey() ? `${o.label} (atual)` : o.label;
+    return `<option value="${o.key}">${rotulo}</option>`;
+  }).join('');
+  // sugere o mês que já está selecionado no Painel, senão o mês atual
+  const sugestao = mesReferenciaSelecionado || currentMonthKey();
+  sel.value = opcoes.some(o=>o.key===sugestao) ? sugestao : currentMonthKey();
+}
+
 document.getElementById('closeBordero').onclick = ()=>{
   document.getElementById('borderoOverlay').classList.remove('open');
 };
@@ -1691,8 +1727,9 @@ function renderBorderoResults(matches){
 window.applyBorderoMatch = async function(idx){
   const m = window._borderoMatches[idx];
   if(!m || !m.sale || !m.entry) return;
+  const mesConfirmacao = document.getElementById('borderoMesSelect').value || currentMonthKey();
   if(!m.sale.recebimentos) m.sale.recebimentos = {};
-  m.sale.recebimentos[m.entry.n] = { valor: m.valor, divergente: m.status==='divergente', mesConfirmacao: currentMonthKey() };
+  m.sale.recebimentos[m.entry.n] = { valor: m.valor, divergente: m.status==='divergente', mesConfirmacao };
   await saveData();
   render();
   document.getElementById('borderoStatus').className = 'ok';
@@ -1701,11 +1738,12 @@ window.applyBorderoMatch = async function(idx){
 
 document.getElementById('borderoApplyAll').onclick = async ()=>{
   const matches = window._borderoMatches || [];
+  const mesConfirmacao = document.getElementById('borderoMesSelect').value || currentMonthKey();
   let count = 0;
   for(const m of matches){
     if((m.status === 'ok' || m.status === 'divergente') && m.sale && m.entry){
       if(!m.sale.recebimentos) m.sale.recebimentos = {};
-      m.sale.recebimentos[m.entry.n] = { valor: m.valor, divergente: m.status==='divergente', mesConfirmacao: currentMonthKey() };
+      m.sale.recebimentos[m.entry.n] = { valor: m.valor, divergente: m.status==='divergente', mesConfirmacao };
       count++;
     }
   }

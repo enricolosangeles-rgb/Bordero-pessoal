@@ -70,25 +70,11 @@ header p{margin:3px 0 0;color:var(--text-muted);font-size:13px;}
 }
 .tab-btn.active{background:var(--gold-soft);border-color:var(--gold-dim);color:var(--gold);}
 
-.summary-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px;}
-.summary-row.only-three .summary-card:last-child{grid-column:1 / -1;}
-
 .mes-ref-select{
   background:var(--surface-2);border:1px solid var(--line);color:var(--gold);
   border-radius:8px;padding:6px 10px;font-size:12.5px;font-weight:600;
   font-family:'Inter',sans-serif;
 }
-.summary-card{
-  background:var(--surface);
-  border:1px solid var(--line);
-  border-radius:14px;
-  padding:16px 18px;
-}
-.summary-card .label{font-size:12px;color:var(--text-muted);margin-bottom:6px;}
-.summary-card .value{
-  font-family:'Sora',sans-serif;font-weight:700;font-size:23px;color:var(--gold);
-}
-.summary-card.muted .value{color:var(--text);}
 
 .ocr-box{
   background:var(--surface-2);
@@ -327,7 +313,8 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield;}
 
 @media(max-width:420px){
   header h1{font-size:21px;}
-  .summary-card .value{font-size:19px;}
+  .meta-stat .value{font-size:15px;}
+  .meta-big{font-size:24px;}
 }
 </style>
 </head>
@@ -347,11 +334,13 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield;}
   <div id="panelView">
     <div class="list-card" id="metaCard"></div>
 
-    <div class="meta-head" style="margin-top:0;">
-      <span class="section-title" style="margin:0;">Previsão de Recebimentos</span>
-      <select id="mesReferenciaSelect" class="mes-ref-select"></select>
+    <div class="list-card" id="previsaoCard">
+      <div class="meta-head" style="margin-top:0;">
+        <span class="section-title" style="margin:0;">Previsão de Recebimentos</span>
+        <select id="mesReferenciaSelect" class="mes-ref-select"></select>
+      </div>
+      <div class="meta-stats" id="summaryRow"></div>
     </div>
-    <div class="summary-row" id="summaryRow"></div>
 
     <div class="section-title">Projeção mensal</div>
     <div class="chart-card"><div class="chart-inner" id="chart"></div></div>
@@ -1031,21 +1020,6 @@ window.editMeta = async function(){
 
 // Soma o valor de UMA parcela das vendas que caíram no ciclo (período de apuração) ainda aberto hoje.
 // Esse total é o que vai virar a primeira parcela a receber no mês seguinte, assim que o ciclo fechar.
-function comissaoCicloAtual(){
-  const hoje = new Date().toISOString().slice(0,10);
-  let total = 0;
-  DATA.sales.forEach(sale=>{
-    if(sale.status === 'cancelado') return;
-    const project = getProject(sale.projectId);
-    const refHoje = periodoReferenceMonth(project, hoje);
-    const refVenda = periodoReferenceMonth(project, sale.date);
-    if(refVenda === refHoje){
-      total += saleParcelValue(sale);
-    }
-  });
-  return total;
-}
-
 let mesReferenciaSelecionado = null; // null = mês atual
 
 function populateMesReferenciaSelect(){
@@ -1109,47 +1083,20 @@ function renderSummary(){
   const rotuloAReceber = vendoMesAtual ? 'A receber este mês' : 'A receber nesse mês';
   const rotuloFuturas = vendoMesAtual ? 'Comissões futuras totais' : 'Comissões futuras (após esse mês)';
 
-  const summaryRow = document.getElementById('summaryRow');
-
-  if(vendoMesAtual){
-    const cicloAtual = comissaoCicloAtual();
-    summaryRow.className = 'summary-row';
-    summaryRow.innerHTML = `
-      <div class="summary-card">
-        <div class="label">${rotuloRecebido}</div>
-        <div class="value">${fmt(recebidoMes)}</div>
-      </div>
-      <div class="summary-card muted">
-        <div class="label">${rotuloAReceber}</div>
-        <div class="value">${fmt(aReceberMes)}</div>
-      </div>
-      <div class="summary-card muted">
-        <div class="label">Comissão do ciclo atual (parcela)</div>
-        <div class="value">${fmt(cicloAtual)}</div>
-      </div>
-      <div class="summary-card muted">
-        <div class="label">${rotuloFuturas}</div>
-        <div class="value">${fmt(futurasTotais)}</div>
-      </div>
-    `;
-  } else {
-    // Mês diferente do atual: sem o card de "ciclo atual" (esse é sempre relativo a hoje)
-    summaryRow.className = 'summary-row only-three';
-    summaryRow.innerHTML = `
-      <div class="summary-card">
-        <div class="label">${rotuloRecebido}</div>
-        <div class="value">${fmt(recebidoMes)}</div>
-      </div>
-      <div class="summary-card muted">
-        <div class="label">${rotuloAReceber}</div>
-        <div class="value">${fmt(aReceberMes)}</div>
-      </div>
-      <div class="summary-card muted">
-        <div class="label">${rotuloFuturas}</div>
-        <div class="value">${fmt(futurasTotais)}</div>
-      </div>
-    `;
-  }
+  document.getElementById('summaryRow').innerHTML = `
+    <div class="meta-stat ok">
+      <div class="label">${rotuloRecebido}</div>
+      <div class="value">${fmt(recebidoMes)}</div>
+    </div>
+    <div class="meta-stat">
+      <div class="label">${rotuloAReceber}</div>
+      <div class="value">${fmt(aReceberMes)}</div>
+    </div>
+    <div class="meta-stat" style="grid-column:1 / -1;">
+      <div class="label">${rotuloFuturas}</div>
+      <div class="value">${fmt(futurasTotais)}</div>
+    </div>
+  `;
 }
 
 // ---------- Gráfico de linha ----------

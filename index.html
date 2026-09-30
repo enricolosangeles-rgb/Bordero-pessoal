@@ -1096,7 +1096,7 @@ function renderSummary(){
   const totalGerado = totalGeradoMes(refKey);
   const recebido = recebidoMesTotal(refKey);
   const aReceber = Math.max(totalGerado - recebido, 0);
-  const futurasTotais = aggregate().filter(a=>a.key>refKey).reduce((s,a)=>s+a.total,0);
+  const futurasTotais = aggregate().filter(a=>a.key>refKey).reduce((s,a)=>s+a.saldo,0);
 
   const sufixo = vendoMesAtual ? 'este mês' : 'nesse mês';
 
@@ -1113,7 +1113,7 @@ function renderSummary(){
       <div class="label">A receber ${sufixo}</div>
       <div class="value">${fmt(aReceber)}</div>
     </div>
-    <div class="meta-stat" style="grid-column:1 / -1;">
+    <div class="meta-stat">
       <div class="label">Comissões futuras (após esse mês)</div>
       <div class="value">${fmt(futurasTotais)}</div>
     </div>

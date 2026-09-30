@@ -340,6 +340,7 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield;}
         <select id="mesReferenciaSelect" class="mes-ref-select"></select>
       </div>
       <div class="meta-stats" id="summaryRow"></div>
+      <div id="fixoConfirmList"></div>
     </div>
 
     <div class="section-title">Projeção mensal</div>
@@ -694,6 +695,7 @@ function migrate(){
   if(DATA.settings.margemCancelamento === undefined) DATA.settings.margemCancelamento = 0.2;
   if(!DATA.metas) DATA.metas = {};
   if(!DATA.produtos || DATA.produtos.length===0) DATA.produtos = defaultProdutos();
+  if(!DATA.fixoRecebimentos) DATA.fixoRecebimentos = {};
   // Corrige silenciosamente produtos que ainda têm os valores antigos (versão anterior da tabela),
   // sem sobrescrever nada que o usuário já tenha editado manualmente.
   const antigos = produtosAntigosParaCorrigir();
@@ -1049,55 +1051,133 @@ document.getElementById('mesReferenciaSelect').addEventListener('change', (e)=>{
   renderSummary();
 });
 
+function fixoKey(projectId, monthKey){ return projectId + '|' + monthKey; }
+
+function projetosComFixoNoMes(refKey){
+  return DATA.projects.filter(p=>p.includeFixo && (!p.mesInicioFixo || refKey>=p.mesInicioFixo));
+}
+
+// Total de comissão + fixo GERADO no mês (por vencimento calculado), com o mesmo desconto
+// de margem de cancelamento usado no gráfico — pra bater exatamente com o que aparece lá.
+function totalGeradoMes(refKey){
+  let bruto = 0;
+  DATA.sales.forEach(sale=>{
+    saleEffectiveSpread(sale).forEach(entry=>{
+      if(entry.key === refKey) bruto += entry.value;
+    });
+  });
+  const margem = DATA.settings.margemCancelamento || 0;
+  const saldo = bruto * (1 - margem);
+  const fixo = projetosComFixoNoMes(refKey).reduce((a,p)=>a+(p.fixoMensal||0),0);
+  return saldo + fixo;
+}
+
+// Valor que você de fato CONFIRMOU ter recebido nesse mês (comissão + fixo),
+// não importa em qual mês aquela parcela/fixo estava originalmente previsto.
+function recebidoMesTotal(refKey){
+  let total = 0;
+  DATA.sales.forEach(sale=>{
+    if(!sale.recebimentos) return;
+    Object.values(sale.recebimentos).forEach(rec=>{
+      if(rec.mesConfirmacao === refKey) total += rec.valor;
+    });
+  });
+  Object.values(DATA.fixoRecebimentos||{}).forEach(rec=>{
+    if(rec.mesConfirmacao === refKey) total += rec.valor;
+  });
+  return total;
+}
+
 function renderSummary(){
   const curKey = currentMonthKey();
   const refKey = mesReferenciaSelecionado || curKey;
   const vendoMesAtual = refKey === curKey;
 
-  let recebidoMes = 0;
-  let aReceberMes = 0;
-  let futurasTotais = 0;
+  const totalGerado = totalGeradoMes(refKey);
+  const recebido = recebidoMesTotal(refKey);
+  const aReceber = Math.max(totalGerado - recebido, 0);
+  const futurasTotais = aggregate().filter(a=>a.key>refKey).reduce((s,a)=>s+a.total,0);
 
-  DATA.sales.forEach(sale=>{
-    const spread = saleEffectiveSpread(sale);
-    spread.forEach(entry=>{
-      const rec = sale.recebimentos && sale.recebimentos[entry.n];
-      if(rec){
-        // Já recebido: conta no mês em que você de fato confirmou o recebimento,
-        // não no mês de vencimento que o app calculou (que é só uma previsão).
-        if(rec.mesConfirmacao === refKey) recebidoMes += rec.valor;
-      } else {
-        // Ainda pendente: usa o vencimento calculado (é uma previsão, não um fato ainda).
-        if(entry.key === refKey) aReceberMes += entry.value;
-        else if(entry.key > refKey) futurasTotais += entry.value;
-      }
-    });
-  });
-
-  const fixoTotal = DATA.projects
-    .filter(p=>p.includeFixo && (!p.mesInicioFixo || refKey>=p.mesInicioFixo))
-    .reduce((a,p)=>a+(p.fixoMensal||0),0);
-  aReceberMes += fixoTotal;
-
-  const rotuloRecebido = vendoMesAtual ? 'Recebido este mês' : 'Recebido nesse mês';
-  const rotuloAReceber = vendoMesAtual ? 'A receber este mês' : 'A receber nesse mês';
-  const rotuloFuturas = vendoMesAtual ? 'Comissões futuras totais' : 'Comissões futuras (após esse mês)';
+  const sufixo = vendoMesAtual ? 'este mês' : 'nesse mês';
 
   document.getElementById('summaryRow').innerHTML = `
+    <div class="meta-stat">
+      <div class="label">Comissão total gerada (${sufixo})</div>
+      <div class="value">${fmt(totalGerado)}</div>
+    </div>
     <div class="meta-stat ok">
-      <div class="label">${rotuloRecebido}</div>
-      <div class="value">${fmt(recebidoMes)}</div>
+      <div class="label">Valor recebido</div>
+      <div class="value">${fmt(recebido)}</div>
     </div>
     <div class="meta-stat">
-      <div class="label">${rotuloAReceber}</div>
-      <div class="value">${fmt(aReceberMes)}</div>
+      <div class="label">A receber ${sufixo}</div>
+      <div class="value">${fmt(aReceber)}</div>
     </div>
     <div class="meta-stat" style="grid-column:1 / -1;">
-      <div class="label">${rotuloFuturas}</div>
+      <div class="label">Comissões futuras (após esse mês)</div>
       <div class="value">${fmt(futurasTotais)}</div>
     </div>
   `;
+
+  renderFixoConfirmList(refKey);
 }
+
+function renderFixoConfirmList(refKey){
+  const el = document.getElementById('fixoConfirmList');
+  const projetos = projetosComFixoNoMes(refKey);
+  if(projetos.length === 0){ el.innerHTML = ''; return; }
+
+  el.innerHTML = `<div style="font-size:12px;color:var(--text-muted);margin:14px 0 6px;">Valor fixo / ajuda de custo</div>` +
+    projetos.map(p=>{
+      const key = fixoKey(p.id, refKey);
+      const conf = DATA.fixoRecebimentos && DATA.fixoRecebimentos[key];
+      if(conf){
+        return `<div class="quick-row-item">
+          <div class="qi-left">
+            <span class="qi-name">${p.name}</span>
+            <span class="qi-id">Confirmado: ${fmt(conf.valor)}</span>
+          </div>
+          <button class="icon-btn" onclick="desfazerFixo('${p.id}','${refKey}')">desfazer</button>
+        </div>`;
+      }
+      return `<div class="quick-row-item">
+        <div class="qi-left">
+          <span class="qi-name">${p.name}</span>
+          <span class="qi-id">Previsto: ${fmt(p.fixoMensal||0)}</span>
+        </div>
+        <button class="confirm-btn" onclick="confirmarFixo('${p.id}','${refKey}',${p.fixoMensal||0})">Confirmar</button>
+      </div>`;
+    }).join('');
+}
+
+window.confirmarFixo = async function(projectId, monthKeyOriginal, valorEsperado){
+  const resp = window.prompt(
+    'Valor do fixo/ajuda de custo recebido (R$):',
+    valorEsperado.toFixed(2).replace('.', ',')
+  );
+  if(resp === null) return;
+  let valor = valorEsperado;
+  const raw = resp.trim();
+  if(raw !== ''){
+    const parsed = parseFloat(raw.replace(/\./g,'').replace(',', '.'));
+    if(!isNaN(parsed)) valor = parsed;
+  }
+  const sugestao = mesReferenciaSelecionado || currentMonthKey();
+  const mesResp = window.prompt('Em qual mês isso deve contar como recebido? (AAAA-MM)', sugestao);
+  if(mesResp === null) return;
+  const mesConfirmacao = /^\d{4}-\d{2}$/.test(mesResp.trim()) ? mesResp.trim() : sugestao;
+
+  if(!DATA.fixoRecebimentos) DATA.fixoRecebimentos = {};
+  DATA.fixoRecebimentos[fixoKey(projectId, monthKeyOriginal)] = { valor, mesConfirmacao };
+  await saveData();
+  render();
+};
+
+window.desfazerFixo = async function(projectId, monthKeyOriginal){
+  if(DATA.fixoRecebimentos) delete DATA.fixoRecebimentos[fixoKey(projectId, monthKeyOriginal)];
+  await saveData();
+  render();
+};
 
 // ---------- Gráfico de linha ----------
 function catmullRom2bezier(points){

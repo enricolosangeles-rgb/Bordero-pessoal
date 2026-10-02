@@ -334,11 +334,11 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield;}
   <div id="panelView">
     <div class="list-card" id="metaCard"></div>
 
+    <div class="meta-head" style="margin-top:0;margin-bottom:10px;">
+      <span class="section-title" style="margin:0;">Previsão de Recebimentos</span>
+      <select id="mesReferenciaSelect" class="mes-ref-select"></select>
+    </div>
     <div class="list-card" id="previsaoCard">
-      <div class="meta-head" style="margin-top:0;">
-        <span class="section-title" style="margin:0;">Previsão de Recebimentos</span>
-        <select id="mesReferenciaSelect" class="mes-ref-select"></select>
-      </div>
       <div class="meta-stats" id="summaryRow"></div>
       <div id="fixoConfirmList"></div>
     </div>
@@ -1067,9 +1067,7 @@ function totalGeradoMes(refKey){
     });
   });
   const margem = DATA.settings.margemCancelamento || 0;
-  const saldo = bruto * (1 - margem);
-  const fixo = projetosComFixoNoMes(refKey).reduce((a,p)=>a+(p.fixoMensal||0),0);
-  return saldo + fixo;
+  return bruto * (1 - margem);
 }
 
 // Valor que você de fato CONFIRMOU ter recebido nesse mês (comissão + fixo),
@@ -1081,9 +1079,6 @@ function recebidoMesTotal(refKey){
     Object.values(sale.recebimentos).forEach(rec=>{
       if(rec.mesConfirmacao === refKey) total += rec.valor;
     });
-  });
-  Object.values(DATA.fixoRecebimentos||{}).forEach(rec=>{
-    if(rec.mesConfirmacao === refKey) total += rec.valor;
   });
   return total;
 }

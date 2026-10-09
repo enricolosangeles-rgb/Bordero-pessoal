@@ -113,6 +113,15 @@ header p{margin:3px 0 0;color:var(--text-muted);font-size:13px;}
 }
 .link-gold{color:var(--gold);font-size:12.5px;text-decoration:none;font-weight:600;}
 
+.vendas-filtro-row{display:flex;align-items:center;justify-content:space-between;margin:10px 0 8px;flex-wrap:wrap;gap:6px;}
+.vendas-filtro-pills{display:flex;gap:6px;}
+.pill-btn{
+  background:var(--surface-2);border:1px solid var(--line);color:var(--text-muted);
+  font-size:11.5px;font-weight:600;padding:5px 11px;border-radius:20px;cursor:pointer;
+}
+.pill-btn.active{background:var(--gold-soft);border-color:var(--gold-dim);color:var(--gold);}
+.vendas-filtro-count{font-size:11.5px;color:var(--text-muted);}
+
 .meta-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;}
 .meta-head .label{font-size:12px;color:var(--text-muted);}
 .meta-big{
@@ -350,6 +359,14 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield;}
       <div class="list-card-head">
         <span class="section-title" style="margin:0;">Vendas</span>
         <a href="#" id="verTodasVendas" class="link-gold">Ver todas</a>
+      </div>
+      <div class="vendas-filtro-row">
+        <div class="vendas-filtro-pills">
+          <button class="pill-btn" data-filtro="mes">Mês</button>
+          <button class="pill-btn" data-filtro="ciclo">Ciclo atual</button>
+          <button class="pill-btn" data-filtro="total">Total</button>
+        </div>
+        <span class="vendas-filtro-count" id="vendasFiltroCount"></span>
       </div>
       <div id="salesList"></div>
     </div>
@@ -1180,14 +1197,49 @@ function statusBadge(sale){
   return '';
 }
 
+let vendasFiltroAtivo = 'mes'; // 'mes' | 'ciclo' | 'total'
+
+function vendasFiltradas(){
+  if(vendasFiltroAtivo === 'total') return DATA.sales;
+
+  const hoje = new Date().toISOString().slice(0,10);
+  const curKey = currentMonthKey();
+
+  if(vendasFiltroAtivo === 'mes'){
+    return DATA.sales.filter(s => monthKeyFromDateStr(s.date) === curKey);
+  }
+  // 'ciclo': vendas que caíram no período de apuração ainda aberto hoje (por projeto)
+  return DATA.sales.filter(s=>{
+    const project = getProject(s.projectId);
+    return periodoReferenceMonth(project, s.date) === periodoReferenceMonth(project, hoje);
+  });
+}
+
+document.querySelectorAll('.pill-btn').forEach(btn=>{
+  btn.onclick = ()=>{
+    vendasFiltroAtivo = btn.dataset.filtro;
+    renderSalesList();
+  };
+});
+
 function renderSalesList(){
+  document.querySelectorAll('.pill-btn').forEach(btn=>{
+    btn.classList.toggle('active', btn.dataset.filtro === vendasFiltroAtivo);
+  });
+
   const el = document.getElementById('salesList');
-  if(DATA.sales.length===0){
-    el.innerHTML = `<div class="empty">Nenhuma venda lançada ainda.<br>Toque em "+" para começar.</div>`;
+  const salesVisiveis = vendasFiltradas();
+  document.getElementById('vendasFiltroCount').textContent =
+    `${salesVisiveis.length} venda${salesVisiveis.length===1?'':'s'}`;
+
+  if(salesVisiveis.length===0){
+    el.innerHTML = DATA.sales.length===0
+      ? `<div class="empty">Nenhuma venda lançada ainda.<br>Toque em "+" para começar.</div>`
+      : `<div class="empty">Nenhuma venda nesse filtro.</div>`;
     return;
   }
   const byProject = {};
-  DATA.sales.forEach(s=>{ (byProject[s.projectId] = byProject[s.projectId]||[]).push(s); });
+  salesVisiveis.forEach(s=>{ (byProject[s.projectId] = byProject[s.projectId]||[]).push(s); });
   let html='';
   DATA.projects.forEach(p=>{
     const sales = byProject[p.id];
